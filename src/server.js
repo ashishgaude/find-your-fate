@@ -12,6 +12,7 @@ let clients = {};
 
 wss.on("connection", (ws) => {
     ws.on("message", (message) => {
+        console.log("connected clients", JSON.stringify(clients))
         const data = JSON.parse(message);
 
         switch (data.type) {
