@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FindYourFate (Made with &hearts; By Goan)</title>
+</head>
+
+<body>
+    <h2>FindYourFate (Made with &hearts; By Goan)</h2>
+    <input id="username" placeholder="Enter your name" />
+    <button onclick="register()">Register</button>
+    <input id="peername" placeholder="Call Peer" />
+    <button onclick="call()">Call</button>
+    <audio id="audio" autoplay></audio>
+
+    <script>
+        const socket = new WebSocket("wss://find-your-fate.onrender.com");
+        let peerConnection;
+        const servers = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+
+        function register() {
+            const name = document.getElementById("username").value;
+            socket.send(JSON.stringify({ type: "register", name }));
+        }
+
+        function call() {
+            const peername = document.getElementById("peername").value;
+            peerConnection = new RTCPeerConnection(servers);
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.send(JSON.stringify({ type: "candidate", target: peername, candidate: event.candidate }));
+                }
+            };
+            peerConnection.ontrack = (event) => {
+                document.getElementById("audio").srcObject = event.streams[0];
+            };
+
+            navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+                stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+                return peerConnection.createOffer();
+            }).then((offer) => {
+                peerConnection.setLocalDescription(offer);
+                socket.send(JSON.stringify({ type: "call", target: peername, offer, caller: document.getElementById("username").value }));
+            });
+        }
+
+        socket.onmessage = async (message) => {
+            const data = JSON.parse(message.data);
+
+            switch (data.type) {
+                case "offer":
+                    peerConnection = new RTCPeerConnection(servers);
+                    peerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            socket.send(JSON.stringify({ type: "candidate", target: data.caller, candidate: event.candidate }));
+                        }
+                    };
+                    peerConnection.ontrack = (event) => {
+                        document.getElementById("audio").srcObject = event.streams[0];
+                    };
+
+                    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+                        stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+                        return peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                    }).then(() => {
+                        return peerConnection.createAnswer();
+                    }).then((answer) => {
+                        peerConnection.setLocalDescription(answer);
+                        socket.send(JSON.stringify({ type: "answer", target: data.caller, answer }));
+                    });
+                    break;
+                case "answer":
+                    peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                    break;
+                case "candidate":
+                    peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    break;
+            }
+        };
+    </script>
+</body>
+
+</html>
